@@ -4,114 +4,392 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { getCategories, getProducts } from "@/lib/api";
 
+type Category = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+type Product = {
+  id: string;
+  name: string;
+  brand: string;
+  specs?: Record<string, unknown>;
+};
+
 export default function ComparePage() {
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState("");
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    getCategories().then(setCategories);
+    getCategories()
+      .then(setCategories)
+      .catch((error) => {
+        console.error("Kategoriler alınamadı:", error);
+      });
   }, []);
 
   useEffect(() => {
-    if (categoryId) {
-      getProducts({ categoryId }).then(setProducts);
+    if (!categoryId) {
+      setProducts([]);
       setSelectedIds([]);
+      setSearch("");
       setResult("");
+      return;
     }
+
+    getProducts()
+      .then((allProducts: any[]) => {
+        const filtered = allProducts.filter(
+          (product) => product.category?.id === categoryId,
+        );
+
+        setProducts(filtered);
+        setSelectedIds([]);
+        setSearch("");
+        setResult("");
+      })
+      .catch((error) => {
+        console.error("Ürünler alınamadı:", error);
+        setProducts([]);
+      });
   }, [categoryId]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= 3) return prev;
+      if (prev.includes(id)) {
+        return prev.filter((x) => x !== id);
+      }
+
+      if (prev.length >= 3) {
+        return prev;
+      }
+
       return [...prev, id];
     });
   }
 
   async function handleCompare() {
-    const selectedProducts = products.filter((p) => selectedIds.includes(p.id));
+    if (selectedIds.length < 2) {
+      return;
+    }
+
+    const selectedProducts = products.filter((product) =>
+      selectedIds.includes(product.id),
+    );
+
     setLoading(true);
     setResult("");
 
-    const res = await fetch("http://localhost:8000/compare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        products: selectedProducts.map((p) => ({
-          id: p.id,
-          name: p.name,
-          brand: p.brand,
-          specs: p.specs,
-        })),
-      }),
-    });
+    try {
+      const res = await fetch("http://localhost:8000/compare", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          products: selectedProducts.map((product) => ({
+            id: product.id,
+            name: product.name,
+            brand: product.brand,
+            specs: product.specs,
+          })),
+        }),
+      });
 
-    const data = await res.json();
-    setResult(data.comparison || data.error);
-    setLoading(false);
+      if (!res.ok) {
+        throw new Error(`Karşılaştırma hatası: ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      setResult(
+        data.comparison ||
+          data.error ||
+          "Karşılaştırma sonucu alınamadı.",
+      );
+    } catch (error) {
+      console.error(error);
+
+      setResult(
+        "Karşılaştırma sırasında bir sorun oluştu. AI servisinin çalıştığından emin olun.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
-  return (
-    <main className="min-h-screen bg-[#050810] text-white p-8">
-      <div className="max-w-3xl mx-auto">
-        <Link href="/" className="text-blue-400 text-sm">
-          &larr; Ana sayfaya don
-        </Link>
-        <h1 className="text-3xl font-bold mt-4 mb-2">Urun Karsilastir</h1>
-        <p className="text-slate-400 text-sm mb-6">
-          Bir kategori secin, ardindan karsilastirmak istediginiz 2-3 urunu isaretleyin.
-        </p>
+  const filteredProducts = products.filter((product) => {
+    const query = search.trim().toLowerCase();
 
-        <select
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          className="bg-slate-800 text-white px-3 py-2 rounded border border-blue-500/20 mb-6"
+    if (!query) {
+      return true;
+    }
+
+    return (
+      product.name.toLowerCase().includes(query) ||
+      product.brand.toLowerCase().includes(query)
+    );
+  });
+
+  return (
+    <main
+      className="min-h-screen px-5 py-12"
+      style={{
+        background: "var(--background)",
+        color: "var(--text)",
+      }}
+    >
+      <div className="mx-auto max-w-5xl">
+        <Link
+          href="/"
+          className="text-sm font-medium transition-opacity hover:opacity-70"
+          style={{ color: "var(--primary)" }}
         >
-          <option value="">Kategori secin</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          ← Ana sayfaya dön
+        </Link>
+
+        <div className="mt-6 max-w-3xl">
+          <p
+            className="text-sm font-medium uppercase tracking-[0.15em]"
+            style={{ color: "var(--primary)" }}
+          >
+            ComparaAI
+          </p>
+
+          <h1 className="mt-2 text-4xl font-semibold tracking-tight">
+            Ürün Karşılaştır
+          </h1>
+
+          <p
+            className="mt-4 text-base leading-7"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Bir kategori seçin, ardından karşılaştırmak
+            istediğiniz 2-3 ürünü işaretleyin.
+          </p>
+        </div>
+
+        {/* Kategori + Arama */}
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <div>
+            <label
+              htmlFor="category"
+              className="mb-2 block text-sm font-medium"
+            >
+              Kategori
+            </label>
+
+            <select
+              id="category"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3 outline-none"
+              style={{
+                background: "var(--surface)",
+                color: "var(--text)",
+                borderColor: "var(--border)",
+              }}
+            >
+              <option value="">Kategori seçin</option>
+
+              {categories
+                .filter(
+                  (category) =>
+                    category.slug === "telefon" ||
+                    category.slug === "laptop",
+                )
+                .map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="product-search"
+              className="mb-2 block text-sm font-medium"
+            >
+              Ürün ara
+            </label>
+
+            <input
+              id="product-search"
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Ürün veya marka ara..."
+              disabled={!categoryId}
+              className="w-full rounded-lg border px-4 py-3 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                background: "var(--surface)",
+                color: "var(--text)",
+                borderColor: "var(--border)",
+              }}
+            />
+          </div>
+        </div>
 
         {categoryId && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-            {products.map((p: any) => (
-              <button
-                key={p.id}
-                onClick={() => toggleSelect(p.id)}
-                className={`text-left rounded-xl p-4 border transition ${
-                  selectedIds.includes(p.id)
-                    ? "border-blue-400 bg-blue-950/60"
-                    : "border-blue-500/20 bg-slate-900/60 hover:border-blue-500/50"
-                }`}
+          <section className="mt-8">
+            <div className="mb-4 flex items-end justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">
+                  Ürünler
+                </h2>
+
+                <p
+                  className="mt-1 text-sm"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  En fazla 3 ürün seçebilirsiniz.
+                </p>
+              </div>
+
+              <span
+                className="text-sm"
+                style={{ color: "var(--text-secondary)" }}
               >
-                <h2 className="font-semibold">{p.name}</h2>
-                <p className="text-slate-400 text-sm">{p.brand}</p>
-              </button>
-            ))}
-          </div>
+                {selectedIds.length}/3 seçildi
+              </span>
+            </div>
+
+            {filteredProducts.length === 0 ? (
+              <div
+                className="rounded-2xl border p-8 text-center"
+                style={{
+                  background: "var(--surface)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                <p
+                  style={{
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  Aramanıza uygun ürün bulunamadı.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredProducts.map((product) => {
+                  const selected = selectedIds.includes(
+                    product.id,
+                  );
+
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => toggleSelect(product.id)}
+                      className="rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5"
+                      style={{
+                        background: selected
+                          ? "var(--surface-soft)"
+                          : "var(--surface)",
+                        borderColor: selected
+                          ? "var(--primary)"
+                          : "var(--border)",
+                        boxShadow: selected
+                          ? "0 0 0 1px var(--primary)"
+                          : "none",
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold">
+                            {product.name}
+                          </h3>
+
+                          <p
+                            className="mt-1 text-sm"
+                            style={{
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {product.brand}
+                          </p>
+                        </div>
+
+                        <div
+                          className="flex h-5 w-5 items-center justify-center rounded-full border text-xs"
+                          style={{
+                            borderColor: selected
+                              ? "var(--primary)"
+                              : "var(--border)",
+                            background: selected
+                              ? "var(--primary)"
+                              : "transparent",
+                            color: "#fff",
+                          }}
+                        >
+                          {selected ? "✓" : ""}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
 
         {selectedIds.length >= 2 && (
-          <button
-            onClick={handleCompare}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-full font-medium disabled:opacity-50"
-          >
-            {loading ? "Karsilastiriliyor..." : `${selectedIds.length} urunu karsilastir`}
-          </button>
+          <div className="mt-8">
+            <button
+              type="button"
+              onClick={handleCompare}
+              disabled={loading}
+              className="rounded-lg px-5 py-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                background: "var(--primary)",
+                color: "#fff",
+              }}
+            >
+              {loading
+                ? "Karşılaştırılıyor..."
+                : `${selectedIds.length} ürünü karşılaştır`}
+            </button>
+          </div>
         )}
 
         {result && (
-          <div className="mt-6 bg-slate-900/60 border border-blue-500/20 rounded-xl p-5 leading-relaxed">
-            {result}
-          </div>
+          <section className="mt-8">
+            <div
+              className="rounded-2xl border p-6"
+              style={{
+                background: "var(--surface)",
+                borderColor: "var(--border)",
+              }}
+            >
+              <p
+                className="text-sm font-medium"
+                style={{ color: "var(--primary)" }}
+              >
+                ComparaAI Analizi
+              </p>
+
+              <h2 className="mt-1 text-xl font-semibold">
+                Karşılaştırma sonucu
+              </h2>
+
+              <div
+                className="mt-4 whitespace-pre-wrap text-sm leading-7"
+                style={{
+                  color: "var(--text-secondary)",
+                }}
+              >
+                {result}
+              </div>
+            </div>
+          </section>
         )}
       </div>
     </main>

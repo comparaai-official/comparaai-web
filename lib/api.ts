@@ -1,32 +1,107 @@
-const API_URL = "http://localhost:3000";
+const API_URL = "http://localhost:3001";
 
-export async function getCategories() {
-  const res = await fetch(`${API_URL}/categories`, { cache: "no-store" });
-  return res.json();
+export function getImageUrl(imageUrl?: string | null) {
+  if (!imageUrl) {
+    return "";
+  }
+
+  if (
+    imageUrl.startsWith("http://") ||
+    imageUrl.startsWith("https://")
+  ) {
+    return imageUrl;
+  }
+
+  return `${API_URL}${imageUrl}`;
 }
 
-export async function getProducts(filters?: {
+export type Category = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+export type Product = {
+  id: string;
+  name: string;
+  brand: string;
+  price?: number | null;
+  imageUrl?: string | null;
+  specs?: Record<string, unknown>;
+  category?: Category | null;
+};
+
+export type Article = {
+  id: string;
+  title: string;
+  slug: string;
+  summary: string;
+  content: string;
+  imageUrl?: string | null;
+  author: string;
+  isPublished: boolean;
+  publishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProductFilters = {
   categoryId?: string;
   brand?: string;
+  segment?: string;
   minPrice?: string;
   maxPrice?: string;
   minRam?: string;
   minStorage?: string;
   minBattery?: string;
-}) {
-  const params = new URLSearchParams();
-  if (filters) {
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value) params.append(key, value);
-    });
-  }
-  const res = await fetch(`${API_URL}/products?${params.toString()}`, {
+};
+
+async function apiFetch<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
     cache: "no-store",
   });
-  return res.json();
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
 }
 
-export async function getProduct(id: string) {
-  const res = await fetch(`${API_URL}/products/${id}`, { cache: "no-store" });
-  return res.json();
+export function getCategories() {
+  return apiFetch<Category[]>("/categories");
+}
+
+export function getProducts(filters?: ProductFilters) {
+  const params = new URLSearchParams();
+
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        params.set(key, String(value));
+      }
+    });
+  }
+
+  const query = params.toString();
+
+  return apiFetch<Product[]>(
+    query ? `/products?${query}` : "/products",
+  );
+}
+
+export function getProduct(id: string) {
+  return apiFetch<Product>(
+    `/products/${encodeURIComponent(id)}`,
+  );
+}
+
+export function getPublishedArticles() {
+  return apiFetch<Article[]>("/articles/published");
+}
+
+export function getArticleBySlug(slug: string) {
+  return apiFetch<Article>(
+    `/articles/slug/${encodeURIComponent(slug)}`,
+  );
 }
